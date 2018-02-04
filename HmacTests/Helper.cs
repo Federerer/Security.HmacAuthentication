@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -23,13 +21,13 @@ namespace HmacTests
             _relativePath = relativePath;
         }
 
-        public HttpRequestMessage GetRequest(string _constNonce = "")
+        public HttpRequestMessage GetRequest(string _constNonce = null)
         {
             var request = new HttpRequestMessage();
             request.Content = new StringContent("sss");
             request.Method = HttpMethod.Get;
             request.RequestUri = new Uri(_relativePath , UriKind.Relative);
-            string requestUri = WebUtility.UrlEncode("http://localhost" + _relativePath);
+            string requestUri = WebUtility.UrlEncode("http://localhost" + _relativePath).ToLowerInvariant();
 
             string requestHttpMethod = request.Method.Method;
 
@@ -66,8 +64,9 @@ namespace HmacTests
             {
                 byte[] signatureBytes = hmac.ComputeHash(signature);
                 string requestSignatureBase64String = Convert.ToBase64String(signatureBytes);
-                //Setting the values in the Authorization header using custom scheme (amx)
-                request.Headers.Authorization = new AuthenticationHeaderValue("hmac", string.Format("{0}:{1}:{2}:{3}", _appId, requestSignatureBase64String, nonce, requestTimeStamp));
+                //Setting the values in the Authorization header using custom scheme (hmac)
+                var authHeader = string.Format("{0}:{1}:{2}:{3}", _appId, requestSignatureBase64String, nonce, requestTimeStamp);
+                request.Headers.Authorization = new AuthenticationHeaderValue("hmac", authHeader);
             }
         }
 

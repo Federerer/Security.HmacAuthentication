@@ -1,8 +1,8 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Authentication;
-using Microsoft.AspNetCore.Http.Features.Authentication;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System;
 using System.IO;
 using System.Net;
@@ -10,67 +10,71 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Threading.Tasks;
 
 namespace Microsoft.AspNetCore.Authentication.Hmac
 {
     internal class HmacAuthenticationHandler : AuthenticationHandler<HmacAuthenticationOptions>
     {
-        private readonly IMemoryCache _memoryCache;
+        private readonly IMemoryCache memoryCache;
 
-        public HmacAuthenticationHandler(IMemoryCache memoryCache)
+        public HmacAuthenticationHandler(
+            IOptionsMonitor<HmacAuthenticationOptions> options,
+            ILoggerFactory logger,
+            UrlEncoder encoder,
+            ISystemClock clock,
+            IMemoryCache memoryCache) : base(options, logger, encoder, clock)
         {
-            _memoryCache = memoryCache;
+            this.memoryCache = memoryCache;
         }
-        protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
+
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             var authorization = Request.Headers["authorization"];
+
             if (string.IsNullOrEmpty(authorization))
             {
-                return AuthenticateResult.Skip();
+                return Task.FromResult(AuthenticateResult.NoResult());
             }
-            var valid = Validate(Request);
+
+            var valid = validate(Request);
 
             if (valid)
             {
                 var principal = new ClaimsPrincipal(new ClaimsIdentity("HMAC"));
-                var ticket = new AuthenticationTicket(principal, new AuthenticationProperties(), Options.AuthenticationScheme);
-                return AuthenticateResult.Success(ticket);
+                var ticket = new AuthenticationTicket(principal, new AuthenticationProperties(), HmacAuthenticationDefaults.AuthenticationScheme);
+                return Task.FromResult(AuthenticateResult.Success(ticket));
             }
 
-            return AuthenticateResult.Fail("Authentication failed");
-
+            return Task.FromResult(AuthenticateResult.Fail("Authentication failed"));
         }
 
-        protected override Task<bool> HandleUnauthorizedAsync(ChallengeContext context)
-        {
-            return base.HandleUnauthorizedAsync(context);
-        }
-
-        private bool Validate(HttpRequest request)
+        private bool validate(HttpRequest request)
         {
             var header = request.Headers["authorization"];
             var authenticationHeader = AuthenticationHeaderValue.Parse(header);
-            if (Options.AuthenticationScheme.Equals(authenticationHeader.Scheme, StringComparison.OrdinalIgnoreCase))
+
+            if (HmacAuthenticationDefaults.AuthenticationScheme.Equals(authenticationHeader.Scheme, StringComparison.OrdinalIgnoreCase))
             {
                 var rawAuthenticationHeader = authenticationHeader.Parameter;
-                var authenticationHeaderArray = GetAuthenticationValues(rawAuthenticationHeader);
+                var authenticationHeaderArray = getAuthenticationValues(rawAuthenticationHeader);
 
                 if (authenticationHeaderArray != null)
                 {
-                    var AppId = authenticationHeaderArray[0];
+                    var appId = authenticationHeaderArray[0];
                     var incomingBase64Signature = authenticationHeaderArray[1];
                     var nonce = authenticationHeaderArray[2];
                     var requestTimeStamp = authenticationHeaderArray[3];
 
-                    return isValidRequest(request, AppId, incomingBase64Signature, nonce, requestTimeStamp);
+                    return isValidRequest(request, appId, incomingBase64Signature, nonce, requestTimeStamp);
                 }
             }
 
             return false;
         }
 
-        private bool isValidRequest(HttpRequest req, string AppId, string incomingBase64Signature, string nonce, string requestTimeStamp)
+        private bool isValidRequest(HttpRequest req, string appId, string incomingBase64Signature, string nonce, string requestTimeStamp)
         {
             string requestContentBase64String = "";
             var absoluteUri = string.Concat(
@@ -80,29 +84,29 @@ namespace Microsoft.AspNetCore.Authentication.Hmac
                         req.PathBase.ToUriComponent(),
                         req.Path.ToUriComponent(),
                         req.QueryString.ToUriComponent());
-            string requestUri = WebUtility.UrlEncode(absoluteUri);
+            string requestUri = WebUtility.UrlEncode(absoluteUri).ToLowerInvariant();
             string requestHttpMethod = req.Method;
 
-            if (Options.AppId != AppId)
+            if (Options.AppId != appId)
             {
                 return false;
             }
 
             var sharedKey = Options.SecretKey;
 
-            if (IsReplayRequest(nonce, requestTimeStamp))
+            if (isReplayRequest(nonce, requestTimeStamp))
             {
                 return false;
             }
 
-            byte[] hash = ComputeHash(req.Body);
+            byte[] hash = computeHash(req.Body);
 
             if (hash != null)
             {
                 requestContentBase64String = Convert.ToBase64String(hash);
             }
 
-            string data = String.Format("{0}{1}{2}{3}{4}{5}", AppId, requestHttpMethod, requestUri, requestTimeStamp, nonce, requestContentBase64String);
+            string data = String.Format("{0}{1}{2}{3}{4}{5}", appId, requestHttpMethod, requestUri, requestTimeStamp, nonce, requestContentBase64String);
 
             var secretKeyBytes = Convert.FromBase64String(sharedKey);
 
@@ -111,13 +115,11 @@ namespace Microsoft.AspNetCore.Authentication.Hmac
             using (HMACSHA256 hmac = new HMACSHA256(secretKeyBytes))
             {
                 byte[] signatureBytes = hmac.ComputeHash(signature);
-
                 return (incomingBase64Signature.Equals(Convert.ToBase64String(signatureBytes), StringComparison.Ordinal));
             }
-
         }
 
-        private string[] GetAuthenticationValues(string rawAuthenticationHeader)
+        private string[] getAuthenticationValues(string rawAuthenticationHeader)
         {
             var credArray = rawAuthenticationHeader.Split(':');
 
@@ -131,10 +133,10 @@ namespace Microsoft.AspNetCore.Authentication.Hmac
             }
         }
 
-        private bool IsReplayRequest(string nonce, string requestTimeStamp)
+        private bool isReplayRequest(string nonce, string requestTimeStamp)
         {
-            var nonceInMemory = _memoryCache.Get(nonce);
-            if ( nonceInMemory != null)
+            var nonceInMemory = memoryCache.Get(nonce);
+            if (nonceInMemory != null)
             {
                 return true;
             }
@@ -142,24 +144,25 @@ namespace Microsoft.AspNetCore.Authentication.Hmac
             DateTime epochStart = new DateTime(1970, 01, 01, 0, 0, 0, 0, DateTimeKind.Utc);
             TimeSpan currentTs = DateTime.UtcNow - epochStart;
 
-            var serverTotalSeconds = Convert.ToUInt64(currentTs.TotalSeconds);
-            var requestTotalSeconds = Convert.ToUInt64(requestTimeStamp);
+            var serverTotalSeconds = Convert.ToInt64(currentTs.TotalSeconds);
+            var requestTotalSeconds = Convert.ToInt64(requestTimeStamp);
             var diff = (serverTotalSeconds - requestTotalSeconds);
 
-            if (diff > Options.MaxRequestAgeInSeconds)
+            if (Math.Abs(diff) > Options.MaxRequestAgeInSeconds)
             {
                 return true;
             }
-            _memoryCache.Set(nonce, requestTimeStamp, DateTimeOffset.UtcNow.AddSeconds(Options.MaxRequestAgeInSeconds));
+
+            memoryCache.Set(nonce, requestTimeStamp, DateTimeOffset.UtcNow.AddSeconds(Options.MaxRequestAgeInSeconds));
             return false;
         }
 
-        private byte[] ComputeHash(Stream body)
+        private byte[] computeHash(Stream body)
         {
             using (MD5 md5 = MD5.Create())
             {
                 byte[] hash = null;
-                var content = ReadFully(body);
+                var content = readFully(body);
                 if (content.Length != 0)
                 {
                     hash = md5.ComputeHash(content);
@@ -168,7 +171,7 @@ namespace Microsoft.AspNetCore.Authentication.Hmac
             }
         }
 
-        private byte[] ReadFully(Stream input)
+        private byte[] readFully(Stream input)
         {
             byte[] buffer = new byte[16 * 1024];
             using (MemoryStream ms = new MemoryStream())
