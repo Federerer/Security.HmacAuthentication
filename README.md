@@ -6,7 +6,7 @@ ASP.NET Core 2.0 port of https://github.com/ademcaglin/Security.HmacAuthenticati
 
 # How to use
 
-Copy files in Security.HmacAuthentication/HmacAuthentication/ folder into your project and write following code in ``Startup.cs`:
+Copy files in Security.HmacAuthentication/HmacAuthentication/ folder into your project and write following code in `Startup.cs`:
 		
         public void ConfigureServices(IServiceCollection services)
         {
@@ -19,13 +19,13 @@ Copy files in Security.HmacAuthentication/HmacAuthentication/ folder into your p
 						cfg.MaxRequestAgeInSeconds = 500;
 					})
             //...
-		}
+        }
 
         public void Configure(IApplicationBuilder app, ILoggerFactory loggerFactory)
         {
             //...
             app.UseAuthentication();
-           //...
+            //...
          }
 
 To call a API, use a `HttpClient`with a `DelegatingHandler`. An example can be found in
