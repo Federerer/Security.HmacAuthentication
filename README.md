@@ -1,4 +1,4 @@
-# Aspnet Core Hmac Authentication 
+# ASP.NET Core 2.0 Hmac Authentication 
 
 This library is just for illustration. Be careful when you plan to use for production.
 
@@ -7,6 +7,7 @@ ASP.NET Core 2.0 port of https://github.com/ademcaglin/Security.HmacAuthenticati
 # How to use
 
 Copy files in Security.HmacAuthentication/HmacAuthentication/ folder into your project and write following code in Startup.cs
+		
 		public void ConfigureServices(IServiceCollection services)
         {
             //...
@@ -28,4 +29,4 @@ Copy files in Security.HmacAuthentication/HmacAuthentication/ folder into your p
          }
 
 To call a API, use a `HttpClient`with a `DelegatingHandler`. An example can be found in
-`Security.HmacAuthentication\HmacAuthentication\HmacDelegatingHandler.cs`
+`Security.HmacAuthentication\HmacAuthentication\HmacDelegatingHandler.cs`.
