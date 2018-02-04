@@ -6,9 +6,9 @@ ASP.NET Core 2.0 port of https://github.com/ademcaglin/Security.HmacAuthenticati
 
 # How to use
 
-Copy files in Security.HmacAuthentication/HmacAuthentication/ folder into your project and write following code in Startup.cs
+Copy files in Security.HmacAuthentication/HmacAuthentication/ folder into your project and write following code in ``Startup.cs`:
 		
-		public void ConfigureServices(IServiceCollection services)
+        public void ConfigureServices(IServiceCollection services)
         {
             //...
 			services.AddAuthentication()
