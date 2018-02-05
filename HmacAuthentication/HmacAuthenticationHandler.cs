@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Internal;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -98,8 +99,10 @@ namespace Microsoft.AspNetCore.Authentication.Hmac
             {
                 return false;
             }
-
+            
+            req.EnableRewind();
             byte[] hash = computeHash(req.Body);
+            req.Body.Seek(0, SeekOrigin.Begin);
 
             if (hash != null)
             {
